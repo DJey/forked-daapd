@@ -1613,8 +1613,7 @@ saved_playlist_add(json_object *item, int index, int total, void *arg)
 
   map_playlist_to_pli(&pli, &playlist);
 
-  library_playlist_save(&pli);
-  pl_id = db_pl_id_bypath(pli.path);
+  pl_id = library_playlist_save(&pli);
 
   free_pli(&pli, 1);
 
@@ -1643,27 +1642,41 @@ scan_playlists()
   return ret;
 }
 
+static int
+create_or_update_playlist(struct playlist_info *pli)
+{
+  int pl_id;
+
+  pl_id = db_pl_id_bypath(pli->path);
+  if (pl_id < 0)
+    pl_id = library_playlist_save(pli);
+  else
+    db_pl_ping(pl_id);
+
+  return pl_id;
+}
+
 static void
 create_saved_tracks_playlist()
 {
   struct playlist_info pli =
     {
-      .path = "spotify:savedtracks",
-      .title = "Spotify Saved",
-      .virtual_path = "/spotify:/Spotify Saved",
+      .path = strdup("spotify:savedtracks"),
+      .title = strdup("Spotify Saved"),
+      .virtual_path = strdup("/spotify:/Spotify Saved"),
       .type = PL_PLAIN,
       .parent_id = spotify_base_plid,
       .directory_id = DIR_SPOTIFY,
     };
 
-  library_playlist_save(&pli);
-
-  spotify_saved_plid = db_pl_id_bypath(pli.path);
-  if (spotify_saved_plid <= 0)
+  spotify_saved_plid = create_or_update_playlist(&pli);
+  if (spotify_saved_plid < 0)
     {
       DPRINTF(E_LOG, L_SPOTIFY, "Error adding playlist for saved tracks\n");
       spotify_saved_plid = 0;
     }
+
+  free_pli(&pli, 1);
 }
 
 /*
@@ -1675,24 +1688,27 @@ create_base_playlist()
   cfg_t *spotify_cfg;
   struct playlist_info pli =
     {
-      .path = "spotify:playlistfolder",
-      .title = "Spotify",
+      .path = strdup("spotify:playlistfolder"),
+      .title = strdup("Spotify"),
       .type = PL_FOLDER,
     };
 
   spotify_base_plid = 0;
   spotify_cfg = cfg_getsec(cfg, "spotify");
   if (cfg_getbool(spotify_cfg, "base_playlist_disable"))
-    return;
+    {
+      free_pli(&pli, 1);
+      return;
+    }
 
-  library_playlist_save(&pli);
-
-  spotify_base_plid = db_pl_id_bypath(pli.path);
+  spotify_base_plid = create_or_update_playlist(&pli);
   if (spotify_base_plid < 0)
     {
       DPRINTF(E_LOG, L_SPOTIFY, "Error adding base playlist\n");
       spotify_base_plid = 0;
     }
+
+  free_pli(&pli, 1);
 }
 
 static void
